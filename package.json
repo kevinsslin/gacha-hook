@@ -1,10 +1,19 @@
 {
+<<<<<<< HEAD
   "name": "@prb/foundry-template",
   "description": "Foundry-based template for developing Solidity smart contracts",
   "version": "1.0.0",
   "author": {
     "name": "Paul Razvan Berg",
     "url": "https://github.com/PaulRBerg"
+=======
+  "name": "@kevinsslin/gacha-hook",
+  "description": "",
+  "version": "1.0.0",
+  "author": {
+    "name": "kevinsslin",
+    "url": "https://github.com/kevinsslin"
+>>>>>>> 5b73159 (feat: initial commit)
   },
   "devDependencies": {
     "prettier": "^3.0.0"
