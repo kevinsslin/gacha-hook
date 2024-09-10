@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import { Test } from "forge-std/Test.sol";
+import { Test, console2 } from "forge-std/Test.sol";
 
 import { Deployers } from "@uniswap/v4-core/test/utils/Deployers.sol";
 import { PoolSwapTest } from "v4-core/test/PoolSwapTest.sol";
@@ -20,32 +20,64 @@ import { LiquidityAmounts } from "@uniswap/v4-core/test/utils/LiquidityAmounts.s
 
 import "forge-std/console.sol";
 import { GachaHook } from "../src/GachaHook.sol";
+import {Config} from "./Helper/Config.t.sol";
+
+import {VRFCoordinatorV2_5Mock} from "chainlink/contracts/src/v0.8/vrf/mocks/VRFCoordinatorV2_5Mock.sol";
+
+import {LinkToken} from "./Mocks/LinkToken.sol";
+
 
 contract TestGachaHook is Test, Deployers {
     using CurrencyLibrary for Currency;
 
+    // Token
     MockERC20 private _token;
     MockERC721 private _nft;
 
+    // Pair Token
     Currency private _ethCurrency = Currency.wrap(address(0));
     Currency private _tokenCurrency;
 
+    // Contract
     GachaHook private _hook;
 
+    // Configuration
+    Config internal helperConfig;
+    Config.NetworkConfig internal config;
+
     function setUp() public {
-        // Step 1 + 2
-        // Deploy PoolManager and Router contracts
+        // Deploy Pool Manager & Router
         deployFreshManagerAndRouters();
+
+        helperConfig = new Config();
+        config = helperConfig.getConfig();
 
         // Deploy our NFT contract
         _nft = new MockERC721("Test NFT", "NFT");
 
         // Deploy hook to an address that has the proper flags set
         uint160 flags = uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.AFTER_SWAP_FLAG);
-        deployCodeTo("GachaHook.sol", abi.encode(manager, address(_nft), "GachaTest NFT", "gNFT"), address(flags));
+
+        string memory name_ = "GachaTest NFT";
+        string memory symbol_ = "gNFT";
+        address vrfCoordinator = config.vrfCoordinatorV2_5;
+        bytes32 gasLane = config.gasLane;
+        uint256 subscriptionId = config.subscriptionId;
+        uint32 callbackGasLimit = config.callbackGasLimit;
+        address link = config.link;
+
+
+        // Link Token funding
+        LinkToken(link).mint(address(this), 100 ether);
+
+        bytes memory initData = abi.encode(manager, address(_nft), name_, symbol_, vrfCoordinator, gasLane, subscriptionId, callbackGasLimit);
+
+        deployCodeTo("GachaHook.sol", initData, address(flags));
 
         // Deploy our hook
         _hook = GachaHook(address(flags));
+
+        VRFCoordinatorV2_5Mock(vrfCoordinator).addConsumer(subscriptionId, address(_hook));
 
         // Deploy our TOKEN contract
         _token = new MockERC20("Test Token", "TEST", 18);
@@ -71,5 +103,14 @@ contract TestGachaHook is Test, Deployers {
         );
     }
 
-    function test_setUp() public { }
+    function testRequestRandomNumber() public { 
+        uint256 requestId = _hook.requestRandomNumber();
+        
+        address vrfCoordinator = config.vrfCoordinatorV2_5;
+        VRFCoordinatorV2_5Mock(vrfCoordinator).fundSubscription(config.subscriptionId, 100 ether);
+
+        VRFCoordinatorV2_5Mock(vrfCoordinator).fulfillRandomWords(uint256(requestId), address(_hook));
+        uint256 d = _hook.ReturnCount();
+        console.log(d); // `d` should be some random number.
+    }
 }
