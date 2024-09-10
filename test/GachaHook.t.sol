@@ -20,12 +20,11 @@ import { LiquidityAmounts } from "@uniswap/v4-core/test/utils/LiquidityAmounts.s
 
 import "forge-std/console.sol";
 import { GachaHook } from "../src/GachaHook.sol";
-import {Config} from "./Helper/Config.t.sol";
+import { Config } from "./Helper/Config.t.sol";
 
-import {VRFCoordinatorV2_5Mock} from "chainlink/contracts/src/v0.8/vrf/mocks/VRFCoordinatorV2_5Mock.sol";
+import { VRFCoordinatorV2_5Mock } from "chainlink/contracts/src/v0.8/vrf/mocks/VRFCoordinatorV2_5Mock.sol";
 
-import {LinkToken} from "./Mocks/LinkToken.sol";
-
+import { LinkToken } from "./Mocks/LinkToken.sol";
 
 contract TestGachaHook is Test, Deployers {
     using CurrencyLibrary for Currency;
@@ -66,11 +65,12 @@ contract TestGachaHook is Test, Deployers {
         uint32 callbackGasLimit = config.callbackGasLimit;
         address link = config.link;
 
-
         // Link Token funding
         LinkToken(link).mint(address(this), 100 ether);
 
-        bytes memory initData = abi.encode(manager, address(_nft), name_, symbol_, vrfCoordinator, gasLane, subscriptionId, callbackGasLimit);
+        bytes memory initData = abi.encode(
+            manager, address(_nft), name_, symbol_, vrfCoordinator, gasLane, subscriptionId, callbackGasLimit
+        );
 
         deployCodeTo("GachaHook.sol", initData, address(flags));
 
@@ -103,9 +103,9 @@ contract TestGachaHook is Test, Deployers {
         );
     }
 
-    function testRequestRandomNumber() public { 
+    function testRequestRandomNumber() public {
         uint256 requestId = _hook.requestRandomNumber();
-        
+
         address vrfCoordinator = config.vrfCoordinatorV2_5;
         VRFCoordinatorV2_5Mock(vrfCoordinator).fundSubscription(config.subscriptionId, 100 ether);
 

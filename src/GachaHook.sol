@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {VRFCoordinatorV2Interface} from "chainlink/contracts/src/v0.8/vrf/interfaces/VRFCoordinatorV2Interface.sol";
+import { VRFCoordinatorV2Interface } from "chainlink/contracts/src/v0.8/vrf/interfaces/VRFCoordinatorV2Interface.sol";
 
-import {VRFConsumerBaseV2Plus} from "chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
+import { VRFConsumerBaseV2Plus } from "chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
 
-import {VRFV2PlusClient} from "chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
+import { VRFV2PlusClient } from "chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
 
 import { BaseHook } from "v4-periphery/src/base/hooks/BaseHook.sol";
 import { ERC20 } from "solmate/src/tokens/ERC20.sol";
@@ -73,9 +73,10 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
         string memory symbol_,
         address vrfCoordinator,
         bytes32 gasLane,
-        uint256 subscriptionId, 
+        uint256 subscriptionId,
         uint32 callbackGasLimit
-    ) VRFConsumerBaseV2Plus(vrfCoordinator)
+    )
+        VRFConsumerBaseV2Plus(vrfCoordinator)
         BaseHook(manager_)
         ERC20(name_, symbol_, 18)
     {
@@ -145,7 +146,7 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
             // randomly select a collateral NFT to redeem
             // TODO: implement random selection with Chainlink VRF
             // NOTE: Please call `requestRandomNumber` to get random number
-            
+
             uint256 randomIndex_ = block.timestamp % _collateralCounter;
             uint256 tokenId_ = _collateralTokenIds[randomIndex_];
             _redeemNFT(sender_, tokenId_);
@@ -154,7 +155,7 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
         return (this.afterSwap.selector, 0);
     }
 
-    function requestRandomNumber() external returns(uint256){
+    function requestRandomNumber() external returns (uint256) {
         uint256 requestId = s_vrfCoordinator.requestRandomWords(
             VRFV2PlusClient.RandomWordsRequest({
                 keyHash: i_keyHash,
@@ -162,9 +163,7 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
                 requestConfirmations: REQUEST_CONFIRMATIONS,
                 callbackGasLimit: i_callbackGasLimit,
                 numWords: NUM_WORDS,
-                extraArgs: VRFV2PlusClient._argsToBytes(
-                    VRFV2PlusClient.ExtraArgsV1({nativePayment: false})
-                )
+                extraArgs: VRFV2PlusClient._argsToBytes(VRFV2PlusClient.ExtraArgsV1({ nativePayment: false }))
             })
         );
         return requestId;
@@ -216,7 +215,7 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
         count = answer;
     }
 
-    function ReturnCount() public view returns(uint256){
+    function ReturnCount() public view returns (uint256) {
         return count;
     }
 }
