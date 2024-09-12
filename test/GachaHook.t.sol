@@ -18,7 +18,6 @@ import { TickMath } from "v4-core/libraries/TickMath.sol";
 import { SqrtPriceMath } from "v4-core/libraries/SqrtPriceMath.sol";
 import { LiquidityAmounts } from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
 
-import "forge-std/console.sol";
 import { GachaHook } from "../src/GachaHook.sol";
 import { Config } from "./Helper/Config.t.sol";
 
@@ -111,6 +110,6 @@ contract TestGachaHook is Test, Deployers {
 
         VRFCoordinatorV2_5Mock(vrfCoordinator).fulfillRandomWords(uint256(requestId), address(_hook));
         uint256 d = _hook.ReturnCount();
-        console.log(d); // `d` should be some random number.
+        console2.log(d); // `d` should be some random number.
     }
 }
