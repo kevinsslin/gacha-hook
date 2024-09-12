@@ -71,20 +71,20 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
         address nftAddress_,
         string memory name_,
         string memory symbol_,
-        address vrfCoordinator,
-        bytes32 gasLane,
-        uint256 subscriptionId,
-        uint32 callbackGasLimit
+        address vrfCoordinator_,
+        bytes32 gasLane_,
+        uint256 subscriptionId_,
+        uint32 callbackGasLimit_
     )
-        VRFConsumerBaseV2Plus(vrfCoordinator)
+        VRFConsumerBaseV2Plus(vrfCoordinator_)
         BaseHook(manager_)
         ERC20(name_, symbol_, 18)
     {
         _nft = ERC721(nftAddress_);
-        i_vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinator);
-        i_keyHash = gasLane;
-        i_subscriptionId = subscriptionId;
-        i_callbackGasLimit = callbackGasLimit;
+        i_vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinator_);
+        i_keyHash = gasLane_;
+        i_subscriptionId = subscriptionId_;
+        i_callbackGasLimit = callbackGasLimit_;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -188,6 +188,18 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
         return abi.encode(referrer, referree);
     }
 
+    function getNFT() external view returns (address) {
+        return address(_nft);
+    }
+
+    function getCollateralTokenIds() external view returns (uint256[] memory) {
+        return _collateralTokenIds;
+    }
+
+    function getCollateralCounter() external view returns (uint256) {
+        return _collateralCounter;
+    }
+
     /*//////////////////////////////////////////////////////////////
                     INTERNAL NON-CONSTANT FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -209,7 +221,9 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
         _nft.safeTransferFrom(address(this), recipient_, tokenId_);
     }
 
-    // Chainlink Function
+    /*//////////////////////////////////////////////////////////////
+                           CHAINLINK FUNCTION
+    //////////////////////////////////////////////////////////////*/
     function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal override {
         uint256 answer = randomWords[0];
         count = answer;
