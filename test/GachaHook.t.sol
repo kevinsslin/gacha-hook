@@ -28,22 +28,30 @@ import { LinkToken } from "./Mocks/LinkToken.sol";
 contract TestGachaHook is Test, Deployers {
     using CurrencyLibrary for Currency;
 
+    // Users
+    address caller;
+    address trader;
+
     // Token
-    MockERC20 private _token;
-    MockERC721 private _nft;
+    MockERC20 token;
+    MockERC721 nft;
 
     // Pair Token
-    Currency private _ethCurrency = Currency.wrap(address(0));
-    Currency private _tokenCurrency;
+    Currency ethCurrency = Currency.wrap(address(0));
+    Currency tokenCurrency;
 
     // Contract
-    GachaHook private _hook;
+    GachaHook hook;
 
     // Configuration
     Config internal helperConfig;
     Config.NetworkConfig internal config;
 
     function setUp() public {
+        // Set up user accounts
+        caller = makeAddr("CALLER");
+        trader = makeAddr("TRADER");
+
         // Deploy Pool Manager & Router
         deployFreshManagerAndRouters();
 
@@ -51,13 +59,14 @@ contract TestGachaHook is Test, Deployers {
         config = helperConfig.getConfig();
 
         // Deploy our NFT contract
-        _nft = new MockERC721("Test NFT", "NFT");
+        nft = new MockERC721("Test NFT", "NFT");
 
         // Deploy hook to an address that has the proper flags set
         uint160 flags = uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.AFTER_SWAP_FLAG);
 
         string memory name_ = "GachaTest NFT";
         string memory symbol_ = "gNFT";
+
         address vrfCoordinator = config.vrfCoordinatorV2_5;
         bytes32 gasLane = config.gasLane;
         uint256 subscriptionId = config.subscriptionId;
@@ -67,49 +76,84 @@ contract TestGachaHook is Test, Deployers {
         // Link Token funding
         LinkToken(link).mint(address(this), 100 ether);
 
-        bytes memory initData = abi.encode(
-            manager, address(_nft), name_, symbol_, vrfCoordinator, gasLane, subscriptionId, callbackGasLimit
-        );
+        bytes memory initData =
+            abi.encode(manager, address(nft), name_, symbol_, vrfCoordinator, gasLane, subscriptionId, callbackGasLimit);
 
         deployCodeTo("GachaHook.sol", initData, address(flags));
 
         // Deploy our hook
-        _hook = GachaHook(address(flags));
+        hook = GachaHook(address(flags));
 
-        VRFCoordinatorV2_5Mock(vrfCoordinator).addConsumer(subscriptionId, address(_hook));
+        VRFCoordinatorV2_5Mock(vrfCoordinator).addConsumer(subscriptionId, address(hook));
 
         // Deploy our TOKEN contract
-        _token = new MockERC20("Test Token", "TEST", 18);
-        _tokenCurrency = Currency.wrap(address(_hook));
+        token = new MockERC20("Test Token", "TEST", 18);
+        tokenCurrency = Currency.wrap(address(hook)); // Currency 1 = Hook
 
         // Mint a bunch of TOKEN to ourselves and to address(1)
-        _token.mint(address(this), 1000 ether);
-        _token.mint(address(1), 1000 ether);
+        token.mint(address(this), 1000 ether);
+        token.mint(address(1), 1000 ether);
 
         // Approve our TOKEN for spending on the swap router and modify liquidity router
         // These variables are coming from the `Deployers` contract
-        _token.approve(address(swapRouter), type(uint256).max);
-        _token.approve(address(modifyLiquidityRouter), type(uint256).max);
+        token.approve(address(swapRouter), type(uint256).max);
+        token.approve(address(modifyLiquidityRouter), type(uint256).max);
 
         // Initialize a pool
         (key,) = initPool(
-            _ethCurrency, // Currency 0 = ETH
-            _tokenCurrency, // Currency 1 = TOKEN
-            _hook, // Hook Contract
+            ethCurrency, // Currency 0 = ETH
+            tokenCurrency, // Currency 1 = TOKEN
+            hook, // Hook Contract
             3000, // Swap Fees
             SQRT_PRICE_1_1, // Initial Sqrt(P) value = 1
             ZERO_BYTES // No additional `initData`
         );
     }
 
-    function testRequestRandomNumber() public {
-        uint256 requestId = _hook.requestRandomNumber();
+    function test_SetUp() public {
+        // Check that the hook is set up correctly
+        assertEq(hook.getHookPermissions().beforeInitialize, true);
+        assertEq(hook.getHookPermissions().afterSwap, true);
+
+        assertEq(hook.getNFT(), address(nft));
+        assertEq(hook.name(), "GachaTest NFT");
+        assertEq(hook.symbol(), "gNFT");
+        assertEq(hook.decimals(), 18);
+    }
+
+    function test_FractionalizeNFT() public {
+        vm.startPrank(caller);
+
+        uint256 tokenId = 100;
+        // Mint NFT token id 100 to the caller
+        nft.mint(caller, tokenId);
+
+        assertEq(nft.balanceOf(caller), 1);
+
+        // Fractionalize the NFT
+        nft.approve(address(hook), tokenId);
+        hook.fractionalizeNFT(tokenId);
+
+        // Check that the NFT has been fractionalized
+        assertEq(nft.balanceOf(caller), 0);
+        assertEq(nft.balanceOf(address(hook)), 1);
+        assertEq(nft.ownerOf(tokenId), address(hook));
+
+        assertEq(hook.balanceOf(caller), hook.NFT_TO_TOKEN_RATE());
+
+        uint256 collateralCounter_ = hook.getCollateralCounter();
+        assertEq(collateralCounter_, 1);
+        assertEq(hook.getCollateralTokenIds()[collateralCounter_ - 1], tokenId);
+    }
+
+    function test_RequestRandomNumber() public {
+        uint256 requestId = hook.requestRandomNumber();
 
         address vrfCoordinator = config.vrfCoordinatorV2_5;
         VRFCoordinatorV2_5Mock(vrfCoordinator).fundSubscription(config.subscriptionId, 100 ether);
 
-        VRFCoordinatorV2_5Mock(vrfCoordinator).fulfillRandomWords(uint256(requestId), address(_hook));
-        uint256 d = _hook.ReturnCount();
+        VRFCoordinatorV2_5Mock(vrfCoordinator).fulfillRandomWords(uint256(requestId), address(hook));
+        uint256 d = hook.ReturnCount();
         console2.log(d); // `d` should be some random number.
     }
 }
