@@ -31,10 +31,12 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
     ERC721 private _nft;
     uint256[] private _collateralTokenIds;
     uint256 private _collateralCounter;
-    uint256 count;
+    address[] requestedSenders;
+
+    // TODO: remove this after fixing the issue
+    uint256 r_balance;
 
     // TEMP
-    VRFCoordinatorV2Interface private immutable i_vrfCoordinator;
     bytes32 private immutable i_keyHash;
     uint256 private immutable i_subscriptionId;
     uint16 private constant REQUEST_CONFIRMATIONS = 3;
@@ -54,7 +56,9 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
     //////////////////////////////////////////////////////////////*/
 
     event BeforeInitializeSetting(PoolKey key, address indexed nft);
-    event AfterSwapRedeemNFT(address indexed recipient, uint256 indexed tokenId);
+    event AfterSwapRedeemRequest(address indexed sender, uint256 indexed requestId);
+    event FractionalizeNFT(address indexed originalOwner, uint256 indexed tokenId);
+    event RedeemNFT(address indexed recipient, uint256 indexed tokenId);
 
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
@@ -81,7 +85,6 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
         ERC20(name_, symbol_, 18)
     {
         _nft = ERC721(nftAddress_);
-        i_vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinator_);
         i_keyHash = gasLane_;
         i_subscriptionId = subscriptionId_;
         i_callbackGasLimit = callbackGasLimit_;
@@ -133,7 +136,7 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
         address sender_,
         PoolKey calldata,
         IPoolManager.SwapParams calldata,
-        BalanceDelta,
+        BalanceDelta d,
         bytes calldata
     )
         external
@@ -141,32 +144,14 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
         onlyPoolManager
         returns (bytes4, int128)
     {
-        // if swaper's gNFT token > NFT_TO_TOKEN_RATE, redeem NFT
-        if (ERC20(address(this)).balanceOf(sender_) >= NFT_TO_TOKEN_RATE) {
-            // randomly select a collateral NFT to redeem
-            // TODO: implement random selection with Chainlink VRF
-            // NOTE: Please call `requestRandomNumber` to get random number
-
-            uint256 randomIndex_ = block.timestamp % _collateralCounter;
-            uint256 tokenId_ = _collateralTokenIds[randomIndex_];
-            _redeemNFT(sender_, tokenId_);
-            emit AfterSwapRedeemNFT(sender_, tokenId_);
+        // if swaper's gNFT token > NFT_TO_TOKEN_RATE, send the request to redeem NFT
+        uint256 deltaAmount_ = d.amount0() > 0 ? 0 : uint256(uint128(d.amount0()));
+        if (ERC20(address(this)).balanceOf(sender_) + deltaAmount_ >= NFT_TO_TOKEN_RATE) {
+            uint256 requestId = _requestRandomNumber();
+            requestedSenders.push(sender_);
+            emit AfterSwapRedeemRequest(sender_, requestId);
         }
         return (this.afterSwap.selector, 0);
-    }
-
-    function requestRandomNumber() external returns (uint256) {
-        uint256 requestId = s_vrfCoordinator.requestRandomWords(
-            VRFV2PlusClient.RandomWordsRequest({
-                keyHash: i_keyHash,
-                subId: i_subscriptionId,
-                requestConfirmations: REQUEST_CONFIRMATIONS,
-                callbackGasLimit: i_callbackGasLimit,
-                numWords: NUM_WORDS,
-                extraArgs: VRFV2PlusClient._argsToBytes(VRFV2PlusClient.ExtraArgsV1({ nativePayment: false }))
-            })
-        );
-        return requestId;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -174,10 +159,12 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
     //////////////////////////////////////////////////////////////*/
 
     function fractionalizeNFT(uint256 tokenId_) external {
+        address originalOwner_ = _nft.ownerOf(tokenId_);
         _nft.transferFrom(msg.sender, address(this), tokenId_);
         _collateralTokenIds.push(tokenId_);
         _collateralCounter++;
         _mint(msg.sender, NFT_TO_TOKEN_RATE);
+        emit FractionalizeNFT(originalOwner_, tokenId_);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -204,32 +191,52 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
                     INTERNAL NON-CONSTANT FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function _redeemNFT(address recipient_, uint256 tokenId_) internal {
-        _burn(recipient_, NFT_TO_TOKEN_RATE);
+    function _redeemNFT(address[] memory recipients_, uint256 tokenId_) internal {
+        for (uint256 i = 0; i < recipients_.length; i++) {
+            address recipient_ = recipients_[i];
+            // TODO: remove this after fixing the issue
+            r_balance = ERC20(address(this)).balanceOf(recipient_);
+            // _burn(recipient_, NFT_TO_TOKEN_RATE);
 
-        // remove tokenId_ from _collateralTokenIds
-        for (uint256 i = 0; i < _collateralCounter; i++) {
-            if (_collateralTokenIds[i] == tokenId_) {
-                // swap with last element
-                _collateralTokenIds[i] = _collateralTokenIds[_collateralCounter - 1];
-                // remove last element
-                delete _collateralTokenIds[_collateralCounter - 1];
-                _collateralCounter--;
-                break;
+            // remove tokenId_ from _collateralTokenIds
+            for (uint256 j = 0; j < _collateralCounter; j++) {
+                if (_collateralTokenIds[j] == tokenId_) {
+                    // swap with last element
+                    _collateralTokenIds[j] = _collateralTokenIds[_collateralCounter - 1];
+                    // remove last element
+                    delete _collateralTokenIds[_collateralCounter - 1];
+                    _collateralCounter--;
+                    break;
+                }
             }
+            _nft.transferFrom(address(this), recipient_, tokenId_);
+            // remove recipient_ from requestedSenders
+            delete requestedSenders[i];
+            emit RedeemNFT(recipient_, tokenId_);
         }
-        _nft.safeTransferFrom(address(this), recipient_, tokenId_);
     }
 
     /*//////////////////////////////////////////////////////////////
                            CHAINLINK FUNCTION
     //////////////////////////////////////////////////////////////*/
-    function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal override {
-        uint256 answer = randomWords[0];
-        count = answer;
+
+    function _requestRandomNumber() public returns (uint256) {
+        uint256 requestId = s_vrfCoordinator.requestRandomWords(
+            VRFV2PlusClient.RandomWordsRequest({
+                keyHash: i_keyHash,
+                subId: i_subscriptionId,
+                requestConfirmations: REQUEST_CONFIRMATIONS,
+                callbackGasLimit: i_callbackGasLimit,
+                numWords: NUM_WORDS,
+                extraArgs: VRFV2PlusClient._argsToBytes(VRFV2PlusClient.ExtraArgsV1({ nativePayment: false }))
+            })
+        );
+        return requestId;
     }
 
-    function ReturnCount() public view returns (uint256) {
-        return count;
+    function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal override {
+        uint256 randomIndex_ = randomWords[0] % _collateralCounter;
+        uint256 tokenId_ = _collateralTokenIds[randomIndex_];
+        _redeemNFT(requestedSenders, tokenId_);
     }
 }
