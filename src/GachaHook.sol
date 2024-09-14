@@ -1,41 +1,106 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import { VRFCoordinatorV2Interface } from "chainlink/contracts/src/v0.8/vrf/interfaces/VRFCoordinatorV2Interface.sol";
+
+import { VRFConsumerBaseV2Plus } from "chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
+
+import { VRFV2PlusClient } from "chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
+
 import { BaseHook } from "v4-periphery/src/base/hooks/BaseHook.sol";
 import { ERC20 } from "solmate/src/tokens/ERC20.sol";
+import { ERC721 } from "solmate/src/tokens/ERC721.sol";
 
 import { CurrencyLibrary, Currency } from "v4-core/types/Currency.sol";
 import { PoolKey } from "v4-core/types/PoolKey.sol";
 import { BalanceDeltaLibrary, BalanceDelta } from "v4-core/types/BalanceDelta.sol";
 
 import { IPoolManager } from "v4-core/interfaces/IPoolManager.sol";
+import { IHooks } from "v4-core/interfaces/IHooks.sol";
 
 import { Hooks } from "v4-core/libraries/Hooks.sol";
 
-contract GachaHook is BaseHook, ERC20 {
+contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
     using CurrencyLibrary for Currency;
     using BalanceDeltaLibrary for BalanceDelta;
 
-    mapping(address => address) public referredBy;
+    /*//////////////////////////////////////////////////////////////
+                                STORAGE
+    //////////////////////////////////////////////////////////////*/
 
-    uint256 public constant POINTS_FOR_REFERRAL = 500 * 10 ** 18;
+    ERC721 private _nft;
+    uint256[] private _collateralTokenIds;
+    uint256 private _collateralCounter;
+    address[] requestedSenders;
+
+    // TODO: remove this after fixing the issue
+    uint256 r_balance;
+
+    // TEMP
+    bytes32 private immutable i_keyHash;
+    uint256 private immutable i_subscriptionId;
+    uint16 private constant REQUEST_CONFIRMATIONS = 3;
+    uint32 private immutable i_callbackGasLimit;
+
+    uint32 private constant NUM_WORDS = 1;
+    // TEMP
+
+    /*//////////////////////////////////////////////////////////////
+                               CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
+    uint256 public constant NFT_TO_TOKEN_RATE = 1e6 * 1e18; // 1 NFT = 1,000,000 gNFT
+
+    /*//////////////////////////////////////////////////////////////
+                                 EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    event BeforeInitializeSetting(PoolKey key, address indexed nft);
+    event AfterSwapRedeemRequest(address indexed sender, uint256 indexed requestId);
+    event FractionalizeNFT(address indexed originalOwner, uint256 indexed tokenId);
+    event RedeemNFT(address indexed recipient, uint256 indexed tokenId);
+
+    /*//////////////////////////////////////////////////////////////
+                                 ERRORS
+    //////////////////////////////////////////////////////////////*/
+
+    error GachaHook__INVALID_POOL(Currency token0_, Currency token1_, IHooks hook_);
+
+    /*//////////////////////////////////////////////////////////////
+                              CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
 
     constructor(
-        IPoolManager _manager,
-        string memory _name,
-        string memory _symbol
+        IPoolManager manager_,
+        address nftAddress_,
+        string memory name_,
+        string memory symbol_,
+        address vrfCoordinator_,
+        bytes32 gasLane_,
+        uint256 subscriptionId_,
+        uint32 callbackGasLimit_
     )
-        BaseHook(_manager)
-        ERC20(_name, _symbol, 18)
-    { }
+        VRFConsumerBaseV2Plus(vrfCoordinator_)
+        BaseHook(manager_)
+        ERC20(name_, symbol_, 18)
+    {
+        _nft = ERC721(nftAddress_);
+        i_keyHash = gasLane_;
+        i_subscriptionId = subscriptionId_;
+        i_callbackGasLimit = callbackGasLimit_;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             HOOK FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
-            beforeInitialize: false,
+            beforeInitialize: true,
             afterInitialize: false,
             beforeAddLiquidity: false,
             beforeRemoveLiquidity: false,
-            afterAddLiquidity: true,
+            afterAddLiquidity: false,
             afterRemoveLiquidity: false,
             beforeSwap: false,
             afterSwap: true,
@@ -48,87 +113,130 @@ contract GachaHook is BaseHook, ERC20 {
         });
     }
 
-    function afterSwap(
+    function beforeInitialize(
         address,
-        PoolKey calldata key,
-        IPoolManager.SwapParams calldata swapParams,
-        BalanceDelta delta,
-        bytes calldata hookData
+        PoolKey calldata key_,
+        uint160,
+        bytes calldata
+    )
+        external
+        override
+        onlyPoolManager
+        returns (bytes4)
+    {
+        // If this is not an ETH-gNFT pool with this hook attached, revert
+        if (!key_.currency0.isNative() || Currency.unwrap(key_.currency1) != address(this)) {
+            revert GachaHook__INVALID_POOL(key_.currency0, key_.currency1, key_.hooks);
+        }
+        emit BeforeInitializeSetting(key_, address(_nft));
+        return (this.beforeInitialize.selector);
+    }
+
+    function afterSwap(
+        address sender_,
+        PoolKey calldata,
+        IPoolManager.SwapParams calldata,
+        BalanceDelta d,
+        bytes calldata
     )
         external
         override
         onlyPoolManager
         returns (bytes4, int128)
     {
-        // If this is not an ETH-TOKEN pool with this hook attached, ignore
-        if (!key.currency0.isNative()) return (this.afterSwap.selector, 0);
-
-        // We only mint points if user is buying TOKEN with ETH
-        if (!swapParams.zeroForOne) return (this.afterSwap.selector, 0);
-
-        // Mint points equal to 20% of the amount of ETH they spent
-        // Since its a zeroForOne swap:
-        // if amountSpecified < 0:
-        //      this is an "exact input for output" swap
-        //      amount of ETH they spent is equal to |amountSpecified|
-        // if amountSpecified > 0:
-        //      this is an "exact output for input" swap
-        //      amount of ETH they spent is equal to BalanceDelta.amount0()
-
-        uint256 ethSpendAmount =
-            swapParams.amountSpecified < 0 ? uint256(-swapParams.amountSpecified) : uint256(int256(-delta.amount0()));
-        uint256 pointsForSwap = ethSpendAmount / 5;
-
-        // Mint the points including any referral points
-        _assignPoints(hookData, pointsForSwap);
-
+        // if swaper's gNFT token > NFT_TO_TOKEN_RATE, send the request to redeem NFT
+        uint256 deltaAmount_ = d.amount0() > 0 ? 0 : uint256(uint128(d.amount0()));
+        if (ERC20(address(this)).balanceOf(sender_) + deltaAmount_ >= NFT_TO_TOKEN_RATE) {
+            uint256 requestId = _requestRandomNumber();
+            requestedSenders.push(sender_);
+            emit AfterSwapRedeemRequest(sender_, requestId);
+        }
         return (this.afterSwap.selector, 0);
     }
 
-    function afterAddLiquidity(
-        address,
-        PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata,
-        BalanceDelta delta,
-        bytes calldata hookData
-    )
-        external
-        override
-        onlyPoolManager
-        returns (bytes4, BalanceDelta)
-    {
-        // If this is not an ETH-TOKEN pool with this hook attached, ignore
-        if (!key.currency0.isNative()) return (this.afterSwap.selector, delta);
+    /*//////////////////////////////////////////////////////////////
+                    EXTERNAL NON-CONSTANT FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
-        // Mint points equivalent to how much ETH they're adding in liquidity
-        uint256 pointsForAddingLiquidity = uint256(int256(-delta.amount0()));
-
-        // Mint the points including any referral points
-        _assignPoints(hookData, pointsForAddingLiquidity);
-
-        return (this.afterAddLiquidity.selector, delta);
+    function fractionalizeNFT(uint256 tokenId_) external {
+        address originalOwner_ = _nft.ownerOf(tokenId_);
+        _nft.transferFrom(msg.sender, address(this), tokenId_);
+        _collateralTokenIds.push(tokenId_);
+        _collateralCounter++;
+        _mint(msg.sender, NFT_TO_TOKEN_RATE);
+        emit FractionalizeNFT(originalOwner_, tokenId_);
     }
 
-    function _assignPoints(bytes calldata hookData, uint256 referreePoints) internal {
-        if (hookData.length == 0) return;
-
-        (address referrer, address referree) = abi.decode(hookData, (address, address));
-        if (referree == address(0)) return;
-
-        if (referredBy[referree] == address(0) && referrer != address(0)) {
-            referredBy[referree] = referrer;
-            _mint(referrer, POINTS_FOR_REFERRAL);
-        }
-
-        // Mint 10% of the referree's points to the referrer
-        if (referredBy[referree] != address(0)) {
-            _mint(referrer, referreePoints / 10);
-        }
-
-        _mint(referree, referreePoints);
-    }
+    /*//////////////////////////////////////////////////////////////
+                      EXTERNAL CONSTANT FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     function getHookData(address referrer, address referree) public pure returns (bytes memory) {
         return abi.encode(referrer, referree);
+    }
+
+    function getNFT() external view returns (address) {
+        return address(_nft);
+    }
+
+    function getCollateralTokenIds() external view returns (uint256[] memory) {
+        return _collateralTokenIds;
+    }
+
+    function getCollateralCounter() external view returns (uint256) {
+        return _collateralCounter;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    INTERNAL NON-CONSTANT FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    function _redeemNFT(address[] memory recipients_, uint256 tokenId_) internal {
+        for (uint256 i = 0; i < recipients_.length; i++) {
+            address recipient_ = recipients_[i];
+            // TODO: remove this after fixing the issue
+            r_balance = ERC20(address(this)).balanceOf(recipient_);
+            // _burn(recipient_, NFT_TO_TOKEN_RATE);
+
+            // remove tokenId_ from _collateralTokenIds
+            for (uint256 j = 0; j < _collateralCounter; j++) {
+                if (_collateralTokenIds[j] == tokenId_) {
+                    // swap with last element
+                    _collateralTokenIds[j] = _collateralTokenIds[_collateralCounter - 1];
+                    // remove last element
+                    delete _collateralTokenIds[_collateralCounter - 1];
+                    _collateralCounter--;
+                    break;
+                }
+            }
+            _nft.transferFrom(address(this), recipient_, tokenId_);
+            // remove recipient_ from requestedSenders
+            delete requestedSenders[i];
+            emit RedeemNFT(recipient_, tokenId_);
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                           CHAINLINK FUNCTION
+    //////////////////////////////////////////////////////////////*/
+
+    function _requestRandomNumber() public returns (uint256) {
+        uint256 requestId = s_vrfCoordinator.requestRandomWords(
+            VRFV2PlusClient.RandomWordsRequest({
+                keyHash: i_keyHash,
+                subId: i_subscriptionId,
+                requestConfirmations: REQUEST_CONFIRMATIONS,
+                callbackGasLimit: i_callbackGasLimit,
+                numWords: NUM_WORDS,
+                extraArgs: VRFV2PlusClient._argsToBytes(VRFV2PlusClient.ExtraArgsV1({ nativePayment: false }))
+            })
+        );
+        return requestId;
+    }
+
+    function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal override {
+        uint256 randomIndex_ = randomWords[0] % _collateralCounter;
+        uint256 tokenId_ = _collateralTokenIds[randomIndex_];
+        _redeemNFT(requestedSenders, tokenId_);
     }
 }
