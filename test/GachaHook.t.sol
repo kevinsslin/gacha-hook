@@ -97,8 +97,8 @@ contract TestGachaHook is Test, Deployers {
         // Link Token funding
         LinkToken(link).mint(address(this), 100 ether);
 
-        bytes memory initData =
-            abi.encode(manager, address(nft), name_, symbol_, vrfCoordinator, gasLane, subscriptionId, callbackGasLimit);
+        bytes memory initData = // solhint-disable-next-line
+         abi.encode(manager, address(nft), name_, symbol_, vrfCoordinator, gasLane, subscriptionId, callbackGasLimit);
 
         deployCodeTo("GachaHook.sol", initData, address(flags));
 
