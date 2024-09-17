@@ -20,6 +20,12 @@ import { IHooks } from "v4-core/interfaces/IHooks.sol";
 
 import { Hooks } from "v4-core/libraries/Hooks.sol";
 
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+
+import { Client } from "@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.sol";
+
+import { IRouterClient } from "@chainlink/local/src/ccip/CCIPLocalSimulator.sol";
+
 contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
     using CurrencyLibrary for Currency;
     using BalanceDeltaLibrary for BalanceDelta;
@@ -28,27 +34,27 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
                                 STORAGE
     //////////////////////////////////////////////////////////////*/
 
+    // Gacha
     ERC721 private _nft;
     uint256[] private _collateralTokenIds;
     uint256 private _collateralCounter;
     address[] requestedSenders;
+    mapping(address => mapping(bytes32 => bool)) GachaSignature;
 
-    // TODO: remove this after fixing the issue
-    uint256 r_balance;
+    // Chainlink
+    bytes32 public immutable i_keyHash;
+    uint256 public immutable i_subscriptionId;
+    uint32 public immutable i_callbackGasLimit;
 
-    // TEMP
-    bytes32 private immutable i_keyHash;
-    uint256 private immutable i_subscriptionId;
-    uint16 private constant REQUEST_CONFIRMATIONS = 3;
-    uint32 private immutable i_callbackGasLimit;
-
-    uint32 private constant NUM_WORDS = 1;
-    // TEMP
+    // CCIP
+    IRouterClient public immutable router;
 
     /*//////////////////////////////////////////////////////////////
                                CONSTANTS
     //////////////////////////////////////////////////////////////*/
 
+    uint16 public constant REQUEST_CONFIRMATIONS = 3;
+    uint32 public constant NUM_WORDS = 1;
     uint256 public constant NFT_TO_TOKEN_RATE = 1e6 * 1e18; // 1 NFT = 1,000,000 gNFT
 
     /*//////////////////////////////////////////////////////////////
@@ -65,6 +71,7 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
     //////////////////////////////////////////////////////////////*/
 
     error GachaHook__INVALID_POOL(Currency token0_, Currency token1_, IHooks hook_);
+    error GachaHook__DUPLICATE_SIGNATURE(address initiator, uint256 nounce);
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -78,7 +85,8 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
         address vrfCoordinator_,
         bytes32 gasLane_,
         uint256 subscriptionId_,
-        uint32 callbackGasLimit_
+        uint32 callbackGasLimit_,
+        address router_
     )
         VRFConsumerBaseV2Plus(vrfCoordinator_)
         BaseHook(manager_)
@@ -88,6 +96,7 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
         i_keyHash = gasLane_;
         i_subscriptionId = subscriptionId_;
         i_callbackGasLimit = callbackGasLimit_;
+        router = IRouterClient(router_);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -133,23 +142,40 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
     }
 
     function afterSwap(
-        address sender_,
+        address sender,
         PoolKey calldata,
         IPoolManager.SwapParams calldata,
         BalanceDelta d,
-        bytes calldata
+        bytes calldata data
     )
         external
         override
         onlyPoolManager
         returns (bytes4, int128)
     {
-        // if swaper's gNFT token > NFT_TO_TOKEN_RATE, send the request to redeem NFT
+        (uint256 nounce,, bytes memory signature) = abi.decode(data, (uint256, uint256, bytes));
+        bytes32 message = keccak256(abi.encodePacked(nounce, block.chainid));
+        address initiator = ECDSA.recover(message, signature);
+
+        if (GachaSignature[initiator][message]) {
+            revert GachaHook__DUPLICATE_SIGNATURE(initiator, nounce);
+        }
+        GachaSignature[initiator][message] = true;
+
         uint256 deltaAmount_ = d.amount0() > 0 ? 0 : uint256(uint128(d.amount0()));
-        if (ERC20(address(this)).balanceOf(sender_) + deltaAmount_ >= NFT_TO_TOKEN_RATE) {
-            uint256 requestId = _requestRandomNumber();
-            requestedSenders.push(sender_);
-            emit AfterSwapRedeemRequest(sender_, requestId);
+
+        if (sender == initiator) {
+            if (ERC20(address(this)).balanceOf(initiator) >= NFT_TO_TOKEN_RATE) {
+                uint256 requestId = _requestRandomNumber();
+                requestedSenders.push(initiator);
+                emit AfterSwapRedeemRequest(initiator, requestId);
+            }
+        } else {
+            if (ERC20(address(this)).balanceOf(initiator) + deltaAmount_ >= NFT_TO_TOKEN_RATE) {
+                uint256 requestId = _requestRandomNumber();
+                requestedSenders.push(initiator);
+                emit AfterSwapRedeemRequest(initiator, requestId);
+            }
         }
         return (this.afterSwap.selector, 0);
     }
@@ -160,7 +186,7 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
 
     function fractionalizeNFT(uint256 tokenId_) external {
         address originalOwner_ = _nft.ownerOf(tokenId_);
-        _nft.transferFrom(msg.sender, address(this), tokenId_);
+        _nft.safeTransferFrom(msg.sender, address(this), tokenId_);
         _collateralTokenIds.push(tokenId_);
         _collateralCounter++;
         _mint(msg.sender, NFT_TO_TOKEN_RATE);
@@ -194,9 +220,7 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
     function _redeemNFT(address[] memory recipients_, uint256 tokenId_) internal {
         for (uint256 i = 0; i < recipients_.length; i++) {
             address recipient_ = recipients_[i];
-            // TODO: remove this after fixing the issue
-            r_balance = ERC20(address(this)).balanceOf(recipient_);
-            // _burn(recipient_, NFT_TO_TOKEN_RATE);
+            _burn(recipient_, NFT_TO_TOKEN_RATE);
 
             // remove tokenId_ from _collateralTokenIds
             for (uint256 j = 0; j < _collateralCounter; j++) {
@@ -220,7 +244,7 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
                            CHAINLINK FUNCTION
     //////////////////////////////////////////////////////////////*/
 
-    function _requestRandomNumber() public returns (uint256) {
+    function _requestRandomNumber() internal returns (uint256) {
         uint256 requestId = s_vrfCoordinator.requestRandomWords(
             VRFV2PlusClient.RandomWordsRequest({
                 keyHash: i_keyHash,
@@ -234,9 +258,39 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
         return requestId;
     }
 
-    function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal override {
+    function fulfillRandomWords(uint256, uint256[] calldata randomWords) internal override {
         uint256 randomIndex_ = randomWords[0] % _collateralCounter;
         uint256 tokenId_ = _collateralTokenIds[randomIndex_];
         _redeemNFT(requestedSenders, tokenId_);
+    }
+
+    function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
+        return this.onERC721Received.selector;
+    }
+
+    function prepareSendCrossChain(uint256 _amountToSend)
+        public
+        returns (Client.EVMTokenAmount[] memory tokensToSendDetails, uint256 amountToSend)
+    {
+        ERC20(address(this)).approve(address(router), _amountToSend);
+
+        tokensToSendDetails = new Client.EVMTokenAmount[](1);
+        Client.EVMTokenAmount memory tokenToSendDetails =
+            Client.EVMTokenAmount({ token: address(this), amount: _amountToSend });
+        tokensToSendDetails[0] = tokenToSendDetails;
+        amountToSend = _amountToSend;
+    }
+
+    function sendCrosschain(uint256 amountToSend, uint64 destinationChainSelector, address receiver) public payable {
+        (Client.EVMTokenAmount[] memory tokensToSendDetails, uint256 amountToSend) = prepareSendCrossChain(amountToSend);
+        Client.EVM2AnyMessage memory message = Client.EVM2AnyMessage({
+            receiver: abi.encode(receiver),
+            data: abi.encode(""),
+            tokenAmounts: tokensToSendDetails,
+            extraArgs: Client._argsToBytes(Client.EVMExtraArgsV1({ gasLimit: 0 })),
+            feeToken: address(0)
+        });
+        uint256 fees = router.getFee(destinationChainSelector, message);
+        router.ccipSend{ value: fees }(destinationChainSelector, message);
     }
 }

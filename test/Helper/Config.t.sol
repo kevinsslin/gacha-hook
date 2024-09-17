@@ -2,7 +2,7 @@
 pragma solidity ^0.8.26;
 
 import { Test, console2 } from "forge-std/Test.sol";
-import { LinkToken } from "../mocks/LinkToken.sol";
+import { Link } from "../mocks/LinkToken.sol";
 import { VRFCoordinatorV2_5Mock } from "chainlink/contracts/src/v0.8/vrf/mocks/VRFCoordinatorV2_5Mock.sol";
 
 contract CodeConstants {
@@ -55,7 +55,7 @@ contract Config is CodeConstants, Test {
 
         VRFCoordinatorV2_5Mock vrfCoordinatorV2_5Mock =
             new VRFCoordinatorV2_5Mock(MOCK_BASE_FEE, MOCK_GAS_PRICE_LINK, MOCK_WEI_PER_UINT_LINK);
-        LinkToken link = new LinkToken();
+        Link link = new Link();
         uint256 subscriptionId = vrfCoordinatorV2_5Mock.createSubscription();
 
         localNetworkConfig = NetworkConfig({
@@ -66,7 +66,6 @@ contract Config is CodeConstants, Test {
             link: address(link),
             account: FOUNDRY_DEFAULT_SENDER
         });
-        vm.deal(localNetworkConfig.account, 100 ether);
         vm.stopPrank();
         return localNetworkConfig;
     }
