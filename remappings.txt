@@ -1,5 +1,5 @@
 @ensdomains/=lib/v4-periphery/lib/v4-core/node_modules/@ensdomains/
-@openzeppelin/=lib/v4-periphery/lib/v4-core/lib/openzeppelin-contracts/
+@openzeppelin/=lib/openzeppelin-contracts/
 @openzeppelin/contracts/=lib/v4-periphery/lib/v4-core/lib/openzeppelin-contracts/contracts/
 @uniswap/v4-core/=lib/v4-periphery/lib/v4-core/
 ds-test/=lib/forge-std/lib/ds-test/src/
@@ -12,3 +12,8 @@ permit2/=lib/v4-periphery/lib/permit2/
 solmate/=lib/solmate/
 v4-core/=lib/v4-periphery/lib/v4-core/src/
 v4-periphery/=lib/v4-periphery/
+@chainlink/contracts-ccip/=lib/chainlink-local/lib/ccip/contracts/
+@chainlink/contracts/=lib/chainlink-local/lib/chainlink-brownie-contracts/contracts/
+@chainlink/local/src/=lib/chainlink-local/src/
+chainlink-local/=lib/chainlink-local/src/
+chainlink/=lib/chainlink/

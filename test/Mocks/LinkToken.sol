@@ -8,7 +8,7 @@ interface ERC677Receiver {
     function onTokenTransfer(address _sender, uint256 _value, bytes memory _data) external;
 }
 
-contract LinkToken is ERC20 {
+contract Link is ERC20 {
     uint256 constant INITIAL_SUPPLY = 1_000_000_000_000_000_000_000_000;
     uint8 constant DECIMALS = 18;
 
