@@ -282,6 +282,7 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
     }
 
     function sendCrosschain(uint256 amountToSend, uint64 destinationChainSelector, address receiver) public payable {
+        // solhint-disable-next-line max-line-length
         (Client.EVMTokenAmount[] memory tokensToSendDetails, uint256 amountToSend) = prepareSendCrossChain(amountToSend);
         Client.EVM2AnyMessage memory message = Client.EVM2AnyMessage({
             receiver: abi.encode(receiver),
