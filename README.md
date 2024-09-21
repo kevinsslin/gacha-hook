@@ -1,200 +1,90 @@
-# Foundry Template [![Open in Gitpod][gitpod-badge]][gitpod] [![Github Actions][gha-badge]][gha] [![Foundry][foundry-badge]][foundry] [![License: MIT][license-badge]][license]
+# Gacha Hook
 
-[gitpod]: https://gitpod.io/#https://github.com/kevinsslin/gacha-hook
-[gitpod-badge]: https://img.shields.io/badge/Gitpod-Open%20in%20Gitpod-FFB45B?logo=gitpod
-[gha]: https://github.com/kevinsslin/gacha-hook/actions
-[gha-badge]: https://github.com/kevinsslin/gacha-hook/actions/workflows/ci.yml/badge.svg
-[foundry]: https://getfoundry.sh/
-[foundry-badge]: https://img.shields.io/badge/Built%20with-Foundry-FFDB1C.svg
-[license]: https://opensource.org/licenses/MIT
-[license-badge]: https://img.shields.io/badge/License-MIT-blue.svg
-
-A Foundry-based template for developing Solidity smart contracts, with sensible defaults.
-
-## What's Inside
-
-- [Forge](https://github.com/foundry-rs/foundry/blob/master/forge): compile, test, fuzz, format, and deploy smart
-  contracts
-- [Forge Std](https://github.com/foundry-rs/forge-std): collection of helpful contracts and cheatcodes for testing
-- [PRBTest](https://github.com/PaulRBerg/prb-test): modern collection of testing assertions and logging utilities
-- [Prettier](https://github.com/prettier/prettier): code formatter for non-Solidity files
-- [Solhint Community](https://github.com/solhint-community/solhint-community): linter for Solidity code
+The Gacha Hook addresses high entry barriers, illiquidity, and inefficient revenue models in the NFT market by enabling fractionalization and cross-chain support for a more accessible and dynamic trading experience.
 
 ## Getting Started
 
-Click the [`Use this template`](https://github.com/PaulRBerg/foundry-template/generate) button at the top of the page to
-create a new repository with this repo as the initial state.
+Follow these steps to set up and run the project locally:
 
-Or, if you prefer to install the template manually:
+### 1. Install Foundry and Run `foundryup`
 
-```sh
-$ mkdir my-project
-$ cd my-project
-$ forge init --template PaulRBerg/foundry-template
-$ pnpm install # install Solhint, Prettier, and other Node.js deps
+Foundry is a powerful toolkit for Ethereum development. If you haven't installed Foundry yet, follow the installation guide on [Foundry's GitHub](https://github.com/foundry-rs/foundry). After installation, run:
+
+```bash
+foundryup
 ```
 
-If this is your first time with Foundry, check out the
-[installation](https://github.com/foundry-rs/foundry#installation) instructions.
+This command ensures that you have the latest version of Foundry installed.
 
-## Features
+### 2. Install Dependencies using `pnpm`
 
-This template builds upon the frameworks and libraries mentioned above, so for details about their specific features,
-please consult their respective documentation.
+We use `pnpm` for managing JavaScript dependencies. If you don’t have `pnpm` installed, follow the instructions on [pnpm's official site](https://pnpm.io/installation). Once you have `pnpm` installed, run:
 
-For example, if you're interested in exploring Foundry in more detail, you should look at the
-[Foundry Book](https://book.getfoundry.sh/). In particular, you may be interested in reading the
-[Writing Tests](https://book.getfoundry.sh/forge/writing-tests.html) tutorial.
-
-### Sensible Defaults
-
-This template comes with a set of sensible default configurations for you to use. These defaults can be found in the
-following files:
-
-```text
-├── .editorconfig
-├── .gitignore
-├── .prettierignore
-├── .prettierrc.yml
-├── .solhint.json
-├── foundry.toml
-└── remappings.txt
+```bash
+pnpm install
 ```
 
-### VSCode Integration
+This will install all the necessary dependencies for the project.
 
-This template is IDE agnostic, but for the best user experience, you may want to use it in VSCode alongside Nomic
-Foundation's [Solidity extension](https://marketplace.visualstudio.com/items?itemName=NomicFoundation.hardhat-solidity).
+### 3. Install Solidity Libraries with forge install
 
-For guidance on how to integrate a Foundry project in VSCode, please refer to this
-[guide](https://book.getfoundry.sh/config/vscode).
+To ensure that all Solidity libraries (such as OpenZeppelin and Uniswap contracts) are installed, run:
 
-### GitHub Actions
-
-This template comes with GitHub Actions pre-configured. Your contracts will be linted and tested on every push and pull
-request made to the `main` branch.
-
-You can edit the CI script in [.github/workflows/ci.yml](./.github/workflows/ci.yml).
-
-## Writing Tests
-
-To write a new test contract, you start by importing [PRBTest](https://github.com/PaulRBerg/prb-test) and inherit from
-it in your test contract. PRBTest comes with a pre-instantiated [cheatcodes](https://book.getfoundry.sh/cheatcodes/)
-environment accessible via the `vm` property. If you would like to view the logs in the terminal output you can add the
-`-vvv` flag and use [console.log](https://book.getfoundry.sh/faq?highlight=console.log#how-do-i-use-consolelog).
-
-This template comes with an example test contract [Foo.t.sol](./test/Foo.t.sol)
-
-## Usage
-
-This is a list of the most frequently needed commands.
-
-### Build
-
-Build the contracts:
-
-```sh
-$ forge build
+```bash
+forge install
 ```
 
-### Clean
+This command will download all the dependencies listed in your project’s remappings.
 
-Delete the build artifacts and cache directories:
+### 4. Build the Project with forge build
+Once all the dependencies are installed, build the project to compile the Solidity smart contracts:
 
-```sh
-$ forge clean
+```bash
+forge build
 ```
 
-### Compile
+This will compile all the contracts and ensure that the project is set up correctly.
 
-Compile the contracts:
+### 5. Run Tests with forge test
+Finally, to make sure everything is working as expected, run the tests included in the project by executing:
 
-```sh
-$ forge build
+```bash
+forge test
 ```
 
-### Coverage
+This will run all the test cases and validate the functionality of the Gacha Hook contracts.
 
-Get a test coverage report:
+## Problem / Background
 
-```sh
-$ forge coverage
-```
+The current NFT market faces several key challenges that hinder broader participation and sustainable growth:
 
-### Deploy
+### 1. High Entry Barriers
+Blue-chip NFT projects such as BAYC, Azuki, and CryptoPunks are prohibitively expensive, making it difficult for most participants to access or invest in these highly sought-after assets.
 
-Deploy to Anvil:
+### 2. Illiquidity & Price Discovery Issues
+Most NFTs, built on the ERC-721 standard, are unique and non-fungible. This uniqueness, while valuable for collectors, creates liquidity problems, as it's harder to trade NFTs quickly and at fair market prices compared to fungible tokens like ETH or UNI.
 
-```sh
-$ forge script script/Deploy.s.sol --broadcast --fork-url http://localhost:8545
-```
+### 3. Inefficient Revenue Models
+Many NFT projects rely on limited revenue streams, such as merchandise sales, overlooking the potential of integrating Web3 and DeFi to provide more value to both holders and developers.
 
-For this script to work, you need to have a `MNEMONIC` environment variable set to a valid
-[BIP39 mnemonic](https://iancoleman.io/bip39/).
+## Our Solution
 
-For instructions on how to deploy to a testnet or mainnet, check out the
-[Solidity Scripting](https://book.getfoundry.sh/tutorials/solidity-scripting.html) tutorial.
+We are creating a fractionalized liquidity hub that allows NFT holders to tokenize and split their NFTs into fractions. This approach significantly lowers the high entry barriers, enabling more participants to own and trade fractionalized shares of premium NFTs. By integrating these fractional NFTs natively with Uniswap, we enhance liquidity, facilitating smoother price discovery and faster trading.
 
-### Format
+## Impact
 
-Format the contracts:
+By addressing these core issues, our solution democratizes access to blue-chip NFTs, creating more opportunities for both investors and collectors. Our liquidity hub aims to solve the liquidity challenges that plague the NFT market by providing a more flexible and efficient trading environment. Additionally, NFT holders will have access to new revenue models beyond merchandise sales, unlocking sustainable income opportunities. Ultimately, our approach drives broader participation and fosters innovation in the NFT space within the Web3 ecosystem.
 
-```sh
-$ forge fmt
-```
+## Future Extensions
 
-### Gas Usage
+### Different Pools
+Currently, we support the ETH-gNFT pool, but we plan to add ERC20-gNFT pools in the future to increase diversity in our ecosystem.
 
-Get a gas report:
+### Expanded Callback Support
+We aim to introduce hooks related to liquidity provision and distribute rewards to incentivize liquidity providers (LPs).
 
-```sh
-$ forge test --gas-report
-```
+### Mode Selection
+In the current design, the gacha is triggered when a user meets a specific threshold. In the future, we plan to offer users a choice between participating in the gacha or conducting a standard swap.
 
-### Lint
-
-Lint the contracts:
-
-```sh
-$ pnpm lint
-```
-
-### Test
-
-Run the tests:
-
-```sh
-$ forge test
-```
-
-Generate test coverage and output result to the terminal:
-
-```sh
-$ pnpm test:coverage
-```
-
-Generate test coverage with lcov report (you'll have to open the `./coverage/index.html` file in your browser, to do so
-simply copy paste the path):
-
-```sh
-$ pnpm test:coverage:report
-```
-
-## Notes
-
-1. Foundry uses [git submodules](https://git-scm.com/book/en/v2/Git-Tools-Submodules) to manage dependencies. For
-   detailed instructions on working with dependencies, please refer to the
-   [guide](https://book.getfoundry.sh/projects/dependencies.html) in the book
-2. You don't have to create a `.env` file, but filling in the environment variables may be useful when debugging and
-   testing against a fork.
-
-## Related Efforts
-
-- [abigger87/femplate](https://github.com/abigger87/femplate)
-- [cleanunicorn/ethereum-smartcontract-template](https://github.com/cleanunicorn/ethereum-smartcontract-template)
-- [foundry-rs/forge-template](https://github.com/foundry-rs/forge-template)
-- [FrankieIsLost/forge-template](https://github.com/FrankieIsLost/forge-template)
-
-## License
-
-This project is licensed under MIT.
+### Custom Router
+We plan to develop a custom router, replacing the default Uniswap router, with support for cross-chain functionality in the afterSwap function.
